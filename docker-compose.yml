@@ -1,0 +1,16 @@
+services:
+  rabbitmq-campus-router:
+    image: rabbitmq:3-management
+    container_name: rabbitmq-campus-router
+    hostname: rabbitmq-campus-router
+    ports:
+      - "5678:5672"
+      - "15678:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    volumes:
+      - rabbitmq-campus-router-data:/var/lib/rabbitmq
+
+volumes:
+  rabbitmq-campus-router-data:
