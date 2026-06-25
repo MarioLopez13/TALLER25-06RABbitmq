@@ -1,278 +1,241 @@
-# Taller Semana 11 - Smart Campus Request Router
+# Smart Campus Request Router
 
-## Integrantes
-- Mario López
-- Integrante 2: __________________
-- Integrante 3: __________________
+## Taller Semana 11 – Message Routing y Message Transformation con RabbitMQ y Apache Camel
 
-## 1. Descripción del problema
+### Integrantes
 
-La universidad recibe solicitudes por varios canales, pero todas llegan a una sola cola llamada `campus.requests.in`.
+* Mauro Salguero
+* Mario López
+* Amy Cherrez
+* Jonathan Granja
+* Mateo Pillajo
 
-Yo entendí este taller como una **ventanilla digital**: el estudiante manda una solicitud, la aplicación la ordena en un formato interno y después la manda al área correcta. Si el mensaje viene mal o el tipo no existe, no se pierde; se manda a revisión manual.
+---
 
-## 2. Tecnologías utilizadas
+# 1. Descripción del problema de integración
 
-- Java 17
-- Spring Boot 3.3.5
-- Apache Camel 4.8.1
-- RabbitMQ
-- Docker
-- Maven
+La institución recibe solicitudes estudiantiles desde diferentes canales, como formularios web, aplicaciones móviles y plataformas administrativas. Todas las solicitudes llegan inicialmente a una única cola de RabbitMQ (`campus.requests.in`), pero cada una debe ser enviada al sistema correspondiente según el tipo de solicitud.
 
-## 3. Puertos usados
+Además, los mensajes llegan en un formato externo que no coincide con el formato interno utilizado por la institución. Por esta razón, antes de enrutar cada solicitud, es necesario transformarla a un modelo canónico que permita mantener una estructura uniforme para todos los sistemas.
 
-Para no afectar el proyecto capstone, este taller usa otros puertos:
+---
 
-| Servicio | Puerto interno | Puerto en mi PC |
-|---|---:|---:|
-| RabbitMQ mensajes | 5672 | 5678 |
-| RabbitMQ Management UI | 15672 | 15678 |
-
-Consola RabbitMQ:
-
-```text
-http://localhost:15678
-usuario: guest
-contraseña: guest
-```
-
-## 4. Diagrama del flujo
+# 2. Diagrama del flujo
 
 ```text
 campus.requests.in
-        |
-        v
-[ Message Translator ]
-        |
-        v
-[ Content-Based Router ]
-        |
-        |--> campus.admissions.queue
-        |--> campus.payments.queue
-        |--> campus.support.queue
-        |--> campus.academic.queue
-        |--> campus.manual-review.queue
+        │
+        ▼
+Message Translator
+(Transformación al modelo canónico)
+        │
+        ▼
+Content-Based Router
+        │
+        ├── campus.admissions.queue
+        ├── campus.payments.queue
+        ├── campus.support.queue
+        ├── campus.academic.queue
+        └── campus.manual-review.queue
 ```
 
-## 5. Reglas de enrutamiento
+---
 
-| Tipo de solicitud | Cola destino |
-|---|---|
-| ADMISSION | campus.admissions.queue |
-| PAYMENT | campus.payments.queue |
-| SUPPORT | campus.support.queue |
-| ACADEMIC | campus.academic.queue |
-| Otro valor | campus.manual-review.queue |
-| Mensaje inválido | campus.manual-review.queue |
+# 3. Tecnologías utilizadas
 
-## 6. Cómo ejecutar RabbitMQ
+* Java 21
+* Spring Boot 3.3.5
+* Apache Camel 4.8.1
+* RabbitMQ
+* Docker Desktop
+* Maven
+* Visual Studio Code
 
-Desde la raíz del proyecto:
+---
+
+# 4. Instrucciones para ejecutar RabbitMQ
+
+Levantar el contenedor:
 
 ```bash
 docker compose up -d
 ```
 
-Verificar:
+Verificar que se encuentre en ejecución:
 
 ```bash
 docker ps
 ```
 
-## 7. Crear exchange, colas y bindings
+Abrir RabbitMQ Management:
 
-En Linux, Mac o Git Bash:
-
-```bash
-chmod +x scripts/setup-rabbitmq.sh
-./scripts/setup-rabbitmq.sh
+```
+http://localhost:15678
 ```
 
-Esto crea:
+Usuario:
 
-- `campus.exchange`
-- `campus.requests.in`
-- `campus.admissions.queue`
-- `campus.payments.queue`
-- `campus.support.queue`
-- `campus.academic.queue`
-- `campus.manual-review.queue`
+```
+guest
+```
 
-## 8. Ejecutar la aplicación
+Contraseña:
+
+```
+guest
+```
+
+> Se utilizaron los puertos **5678** y **15678** para evitar conflictos con otros proyectos desarrollados previamente.
+
+---
+
+# 5. Configuración del exchange, colas y bindings
+
+Ejecutar el siguiente comando:
+
+```bash
+bash scripts/setup-rabbitmq.sh
+```
+
+Este script crea:
+
+* Exchange `campus.exchange`
+* Cola de entrada `campus.requests.in`
+* Cola `campus.admissions.queue`
+* Cola `campus.payments.queue`
+* Cola `campus.support.queue`
+* Cola `campus.academic.queue`
+* Cola `campus.manual-review.queue`
+
+Además configura automáticamente todos los bindings necesarios.
+
+---
+
+# 6. Ejecución de la aplicación
+
+Compilar el proyecto:
 
 ```bash
 mvn clean package
+```
+
+Ejecutar la aplicación:
+
+```bash
 mvn spring-boot:run
 ```
 
-Dejar esta terminal abierta para ver los logs de Apache Camel.
+---
 
-## 9. Publicar mensajes de prueba
+# 7. Publicación de mensajes de prueba
 
-Abrir otra terminal y ejecutar:
-
-```bash
-chmod +x scripts/publish-messages.sh
-./scripts/publish-messages.sh
-```
-
-Este script manda mensajes de prueba para:
-
-- ADMISSION
-- PAYMENT
-- SUPPORT
-- ACADEMIC
-- LIBRARY
-- Mensaje inválido
-- SCHOLARSHIP
-
-## 10. Message Translator
-
-El Message Translator se implementa en la clase:
-
-```text
-CanonicalRequestTranslator.java
-```
-
-Su trabajo es transformar el mensaje externo al formato interno de la universidad.
-
-Ejemplo de cambio:
-
-```text
-request_id        -> requestId
-student_name      -> student.fullName
-student_document  -> student.document
-request_type      -> type
-channel           -> sourceChannel
-created_at        -> createdAt
-```
-
-Para mí, esto sirve porque no todos los sistemas hablan igual. Entonces usamos un formato canónico para que la aplicación trabaje con un solo modelo interno.
-
-## 11. Content-Based Router
-
-El Content-Based Router se implementa en:
-
-```text
-CampusRequestRoute.java
-```
-
-La ruta revisa el campo `requestType`, que sale del campo original `request_type`, y decide a qué cola enviar el mensaje.
-
-En mi explicación, esto es como clasificar trámites en una universidad:
-
-- admisiones va a admisiones,
-- pagos va a pagos,
-- soporte va a soporte,
-- académico va al área académica,
-- lo raro o incompleto va a revisión manual.
-
-## 12. Modelo canónico
-
-El modelo canónico usado es:
-
-```json
-{
-  "requestId": "REQ-1001",
-  "student": {
-    "fullName": "Ana Pérez",
-    "document": "1712345678"
-  },
-  "type": "ADMISSION",
-  "sourceChannel": "web",
-  "createdAt": "2026-06-10T10:30:00"
-}
-```
-
-Este modelo reduce acoplamiento porque los sistemas internos no dependen del formato exacto del productor externo.
-
-## 13. Evidencias que se deben pegar aquí
-
-Pegar capturas de:
-
-1. `docker ps` con RabbitMQ ejecutándose.
-2. RabbitMQ Management UI en `http://localhost:15678`.
-3. Exchange `campus.exchange`.
-4. Colas creadas.
-5. Mensaje publicado en `campus.requests.in`.
-6. Mensaje transformado en `campus.admissions.queue`.
-7. Mensaje transformado en `campus.payments.queue`.
-8. Mensaje transformado en `campus.support.queue`.
-9. Mensaje transformado en `campus.academic.queue`.
-10. Mensaje LIBRARY en `campus.manual-review.queue`.
-11. Mensaje inválido en `campus.manual-review.queue`.
-12. Logs de Apache Camel.
-
-## 14. Problemas encontrados y solución
-
-Un problema posible fue el conflicto de puertos con otros proyectos. Para evitar eso, no usé los puertos normales de RabbitMQ en la PC. Cambié:
-
-- `5672` a `5678`
-- `15672` a `15678`
-
-Así este taller puede correr sin afectar el proyecto capstone.
-
-Otro punto fue que el mensaje podía venir incompleto. Para eso validé los campos obligatorios en el traductor. Si falta algo, lo mando a revisión manual.
-
-## 15. Preguntas de reflexión
-
-### 1. ¿Qué problema resuelve Message Translator?
-
-Resuelve el problema de tener mensajes con formatos diferentes. En este taller convierte el JSON externo al formato canónico interno.
-
-### 2. ¿Qué problema resuelve Content-Based Router?
-
-Permite decidir el destino del mensaje según su contenido. Aquí se usa el tipo de solicitud para mandarla a la cola correcta.
-
-### 3. ¿Por qué primero se transforma y luego se enruta?
-
-Porque es más ordenado trabajar con un formato común. Primero dejo el mensaje limpio y estándar, y luego tomo la decisión de a qué cola enviarlo.
-
-### 4. ¿Qué pasaría si cada productor tuviera que conocer todas las colas destino?
-
-Habría más acoplamiento. Cada sistema tendría que saber detalles internos de RabbitMQ y si cambia una cola tocaría modificar varios productores.
-
-### 5. ¿Qué ventaja tiene usar un modelo canónico interno?
-
-La ventaja es que todos los sistemas internos trabajan con la misma estructura, aunque el mensaje original venga de canales diferentes.
-
-### 6. ¿Qué limitaciones tiene esta solución?
-
-La lógica de enrutamiento está fija en el código. Si aparece un nuevo tipo de solicitud, hay que modificar código, crear cola y agregar pruebas.
-
-### 7. ¿Cómo se podría mejorar el manejo de errores?
-
-Se podría agregar una cola de errores técnicos, más logs, validaciones más completas y guardar el motivo exacto del error para revisarlo después.
-
-### 8. ¿Qué cambios serían necesarios para soportar SCHOLARSHIP?
-
-Sería necesario crear `campus.scholarship.queue`, crear su binding, agregar una condición nueva en el router y hacer pruebas con mensajes tipo `SCHOLARSHIP`.
-
-### 9. ¿Qué riesgos tendría poner toda la lógica en el productor?
-
-El productor quedaría muy cargado y acoplado. Además, si cambian las colas o reglas, tocaría cambiar todos los sistemas que producen mensajes.
-
-### 10. ¿Cómo se relaciona con una arquitectura orientada a eventos?
-
-Se relaciona porque los sistemas se comunican mediante mensajes. Un sistema publica una solicitud y otros sistemas la procesan sin depender directamente entre ellos.
-
-## 16. Apagar solución
-
-Detener Spring Boot con:
-
-```text
-CTRL + C
-```
-
-Apagar RabbitMQ:
+Ejecutar:
 
 ```bash
-docker compose down
+bash scripts/publish-messages.sh
 ```
 
-Para borrar datos:
+Este script publica automáticamente mensajes para los siguientes casos:
 
-```bash
-docker compose down -v
+* ADMISSION
+* PAYMENT
+* SUPPORT
+* ACADEMIC
+* LIBRARY
+* INVALID
+* SCHOLARSHIP
+
+---
+
+# 8. Reglas de enrutamiento
+
+| Tipo de solicitud | Cola destino               |
+| ----------------- | -------------------------- |
+| ADMISSION         | campus.admissions.queue    |
+| PAYMENT           | campus.payments.queue      |
+| SUPPORT           | campus.support.queue       |
+| ACADEMIC          | campus.academic.queue      |
+| LIBRARY           | campus.manual-review.queue |
+| SCHOLARSHIP       | campus.manual-review.queue |
+| Mensaje inválido  | campus.manual-review.queue |
+
+---
+
+# 9. Explicación del Message Translator
+
+El patrón **Message Translator** convierte el mensaje recibido desde el formato externo al modelo canónico utilizado por la institución.
+
+Por ejemplo:
+
 ```
+request_id
+```
+
+se transforma en
+
+```
+requestId
+```
+
+y los datos del estudiante se agrupan dentro del objeto:
+
+```
+student
+```
+
+Con esto todos los sistemas trabajan utilizando una misma estructura de datos.
+
+---
+
+# 10. Explicación del Content-Based Router
+
+El patrón **Content-Based Router** analiza el campo **type** del mensaje transformado y decide automáticamente a qué cola debe enviarse.
+
+De esta manera el productor solamente publica el mensaje en una única cola y la lógica de decisión queda centralizada en Apache Camel.
+
+---
+
+# 11. Explicación del modelo canónico
+
+El modelo canónico es una representación estándar de los datos utilizada internamente por la solución.
+
+Su objetivo es reducir el acoplamiento entre sistemas, ya que todos intercambian información utilizando el mismo formato independientemente del origen del mensaje.
+
+---
+
+# 12. Evidencias de ejecución
+
+Se incluyen capturas de:
+
+* Contenedor RabbitMQ en ejecución.
+* RabbitMQ Management UI.
+* Exchange creado.
+* Colas creadas.
+* Mensaje publicado.
+* Mensaje transformado en ADMISSION.
+* Mensaje transformado en PAYMENT.
+* Mensaje transformado en SUPPORT.
+* Mensaje transformado en ACADEMIC.
+* Mensaje LIBRARY enviado a revisión manual.
+* Mensaje INVALID enviado a revisión manual.
+* Logs de Apache Camel.
+
+---
+
+# 13. Problemas encontrados y solución
+
+Durante el desarrollo se presentaron los siguientes inconvenientes:
+
+* Conflicto de puertos con otro proyecto (Capstone). Se solucionó utilizando los puertos **5678** y **15678**.
+* Configuración inicial de Git. Se inicializó el repositorio y posteriormente se realizó el envío a GitHub.
+* Consumo de mensajes en RabbitMQ. Se ajustó el modo **Automatic Ack** para revisar correctamente los mensajes almacenados.
+
+---
+
+# 14. Reflexión técnica final
+
+La implementación permitió comprender cómo Apache Camel facilita la integración entre sistemas mediante patrones de integración empresarial.
+
+El uso del **Message Translator** permitió transformar todos los mensajes a un formato común, mientras que el **Content-Based Router** automatizó el envío hacia la cola correspondiente según el tipo de solicitud.
+
+Esta arquitectura reduce el acoplamiento entre productores y consumidores, facilita el mantenimiento y permite incorporar nuevos tipos de solicitudes con cambios mínimos en la solución.
